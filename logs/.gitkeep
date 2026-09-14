@@ -1,0 +1,2 @@
+# 日志占位文件：保证容器/本地首次启动前 logs/ 目录就存在
+# 实际日志由 RotatingFileHandler 写入，已被 .gitignore 忽略

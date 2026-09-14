@@ -1,0 +1,273 @@
+{% extends 'base.html' %}
+
+{% block title %}数据上传 - 考勤管理系统{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-upload"></i> 数据上传</h2>
+            <p class="text-muted mb-0">
+                上传钉钉后台导出的原始文件。仅支持
+                {% for e in allowed_extensions %}.{{ e }}{% if not forloop.last %}、{% endif %}{% endfor %}
+                格式，单个文件不超过 {{ max_size_mb|floatformat:0 }}MB。
+            </p>
+        </div>
+    </div>
+
+    {# ── 同账期已有数据：等用户确认覆盖方式 ── #}
+    {% if pending %}
+    <div class="alert alert-warning">
+        <h5 class="alert-heading"><i class="bi bi-exclamation-triangle"></i> 该账期已有数据</h5>
+        <p class="mb-2">
+            账期 <strong>{{ pending.period }}</strong> 的
+            <strong>{{ pending.get_file_kind_display }}</strong> 已经导入过
+            {{ existing|length }} 次：
+        </p>
+        <ul class="mb-3">
+            {% for f in existing %}
+            <li>{{ f.original_filename }} —— {{ f.record_count }} 条记录，{{ f.uploaded_at|date:"Y-m-d H:i" }} 由 {{ f.uploaded_by.username }} 上传</li>
+            {% endfor %}
+        </ul>
+        <p class="mb-3 small">
+            你刚上传的文件已暂存为 <code>{{ pending.original_filename }}</code>。
+            请选择处理方式：
+        </p>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+            <form method="post" class="d-inline">
+                {% csrf_token %}
+                <input type="hidden" name="reuse_id" value="{{ pending.pk }}">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-plus-circle"></i> 合并：补齐缺失日期，同日以新文件为准
+                </button>
+            </form>
+            <form method="post" class="d-inline"
+                  onsubmit="return confirm('将清空账期 {{ pending.period }} 的全部已有数据后重新导入，确认？');">
+                {% csrf_token %}
+                <input type="hidden" name="reuse_id" value="{{ pending.pk }}">
+                <input type="hidden" name="purge_existing" value="on">
+                <button type="submit" class="btn btn-danger">
+                    <i class="bi bi-arrow-repeat"></i> 整账期覆盖：清空旧数据后重新导入
+                </button>
+            </form>
+            <form method="post" action="{% url 'attendance:file_delete' pending.pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-secondary">
+                    <i class="bi bi-x-circle"></i> 取消
+                </button>
+            </form>
+        </div>
+        <div class="small text-muted">
+            <strong>两者区别：</strong>
+            「合并」按「日期 + UserId」逐行更新，只补新日期 —— 适合补传漏掉的那几天；
+            「整账期覆盖」先清空该账期再整体写入 ——
+            <strong>适合钉钉重新导出后的整月替换</strong>：重新导出可能有人被整人移除
+            （离职、移出考勤组），只做合并会把这些人上一次的旧数据永远留在库里，
+            月度汇总跟着出错。
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="row g-4 mb-4">
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header"><h5 class="mb-0">
+                    <i class="bi bi-calendar2-week"></i> 1. 日考勤汇总表
+                </h5></div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">
+                        钉钉导出的「每日统计」文件，含两层表头与合并单元格。
+                        文件名形如 <code>XX公司_每日统计_20140801-20140831.xlsx</code>。
+                    </p>
+                    <form method="post" enctype="multipart/form-data" class="upload-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="file_kind" value="daily">
+                        <div class="mb-3">
+                            <label class="form-label">选择文件 <span class="text-danger">*</span></label>
+                            <input type="file" class="form-control" name="file" accept=".xlsx" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">账期 <span class="text-danger">*</span></label>
+                            <input type="month" class="form-control" name="period"
+                                   value="{{ form.period|default:'' }}"
+                                   {% if period_bounds.month_min %}min="{{ period_bounds.month_min }}"{% endif %}
+                                   {% if period_bounds.month_max %}max="{{ period_bounds.month_max }}"{% endif %}
+                                   required>
+                            <div class="form-text">该文件统计的月份，用于按月归档与查重。</div>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" name="purge_existing" id="purgeDaily">
+                            <label class="form-check-label" for="purgeDaily">
+                                覆盖同账期已有数据
+                            </label>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-upload"></i> 上传并解析
+                        </button>
+                    </form>
+                    <div class="upload-progress d-none">
+                        <div class="progress" style="height:6px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated"
+                                 style="width:100%"></div>
+                        </div>
+                        <div class="small text-muted mt-2 upload-progress-text">
+                            正在上传并解析，请稍候…
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header"><h5 class="mb-0">
+                    <i class="bi bi-airplane"></i> 2. 请假单据
+                </h5></div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">
+                        钉钉导出的请假审批文件，单行表头、可能含多个 Sheet 与跨月记录。
+                        仅统计「审批状态=完成 且 审批结果=同意」的记录。
+                    </p>
+                    <form method="post" enctype="multipart/form-data" class="upload-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="file_kind" value="leave">
+                        <div class="mb-3">
+                            <label class="form-label">选择文件 <span class="text-danger">*</span></label>
+                            <input type="file" class="form-control" name="file" accept=".xlsx" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">账期 <span class="text-danger">*</span></label>
+                            <input type="month" class="form-control" name="period"
+                                   value="{{ form.period|default:'' }}"
+                                   {% if period_bounds.month_min %}min="{{ period_bounds.month_min }}"{% endif %}
+                                   {% if period_bounds.month_max %}max="{{ period_bounds.month_max }}"{% endif %}
+                                   required>
+                            <div class="form-text">按「开始时间」归属月份，跨月记录算在开始那个月。</div>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" name="purge_existing" id="purgeLeave">
+                            <label class="form-check-label" for="purgeLeave">
+                                覆盖同账期已有数据
+                            </label>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-upload"></i> 上传并解析
+                        </button>
+                    </form>
+                    <div class="upload-progress d-none">
+                        <div class="progress" style="height:6px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated"
+                                 style="width:100%"></div>
+                        </div>
+                        <div class="small text-muted mt-2 upload-progress-text">
+                            正在上传并解析，请稍候…
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0">当前生效的导入规则</h5></div>
+        <div class="card-body">
+            <ul class="mb-0 small">
+                <li><strong>查重策略</strong>：日考勤按「日期 + UserId」；请假单据按「审批编号」。
+                    勾选「覆盖」时会先清空该账期旧数据再导入。</li>
+                <li><strong>排除人员</strong>：考勤组属于
+                    <code>{{ rule.excluded_attend_groups|join:"、"|default:"（未设置）" }}</code>
+                    的人整行排除；
+                    {% if rule.exclude_if_no_data %}全月无任何打卡与出勤数据的人也排除；{% endif %}
+                    {% if rule.excluded_employees %}名单排除：<code>{{ rule.excluded_employees|join:"、" }}</code>{% endif %}
+                    <a href="{% url 'attendance:rule_config' %}">调整规则</a></li>
+                <li><strong>时长换算</strong>：「天」按标准工作时长
+                    <code>{{ rule.standard_work_minutes }}</code> 分钟/天折算为小时。</li>
+                <li><strong>离职标记</strong>：<code>张三(已离职)</code> 归一化为 <code>张三</code>，
+                    原始值保留备查。</li>
+                <li><strong>请假审批</strong>：{% if rule.exclude_rejected_leave %}
+                    排除未通过的记录，不进明细也不进合计{% else %}
+                    <span class="text-danger">当前**不**排除未通过的记录</span>{% endif %}。</li>
+                <li><strong>导入报告</strong>：错误精确到「Sheet 名 + 行号 + 字段 + 值」。</li>
+            </ul>
+        </div>
+    </div>
+
+    {% if recent_files %}
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">最近的导入</h5>
+            <a href="{% url 'attendance:file_list' %}" class="btn btn-sm btn-outline-secondary">全部记录</a>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>文件名</th><th>类型</th><th>账期</th><th>记录数</th>
+                            <th>跳过</th><th>状态</th><th>上传时间</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        {% for f in recent_files %}
+                        <tr>
+                            <td>{{ f.original_filename }}</td>
+                            <td>{{ f.get_file_kind_display }}</td>
+                            <td>{{ f.period|default:"-" }}</td>
+                            <td>{{ f.record_count }}</td>
+                            <td>{{ f.skipped_count }}</td>
+                            <td>
+                                {% if f.status == 'success' %}<span class="badge bg-success">{{ f.get_status_display }}</span>
+                                {% elif f.status == 'failed' %}<span class="badge bg-danger">{{ f.get_status_display }}</span>
+                                {% elif f.status == 'partial' %}<span class="badge bg-warning text-dark">{{ f.get_status_display }}</span>
+                                {% else %}<span class="badge bg-secondary">{{ f.get_status_display }}</span>{% endif %}
+                            </td>
+                            <td>{{ f.uploaded_at|date:"Y-m-d H:i" }}</td>
+                            <td><a href="{% url 'attendance:import_detail' f.pk %}" class="btn btn-sm btn-outline-primary">报告</a></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// 上传是同步处理的：大文件要等几秒到十几秒。浏览器原生没有上传/解析进度事件
+// 可用（解析在服务端），所以这里给出**明确的进行中反馈 + 已用时间**，
+// 而不是让用户对着一个没反应的按钮发呆。
+(function () {
+    document.querySelectorAll('form.upload-form').forEach(function (form) {
+        form.addEventListener('submit', function () {
+            const btn = form.querySelector('button[type="submit"]');
+            const box = form.parentElement.querySelector('.upload-progress');
+            const text = box ? box.querySelector('.upload-progress-text') : null;
+            const fileInput = form.querySelector('input[type="file"]');
+            const sizeMB = (fileInput && fileInput.files[0])
+                ? (fileInput.files[0].size / 1024 / 1024).toFixed(1) : null;
+
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 正在处理…';
+            }
+            if (box) box.classList.remove('d-none');
+
+            const t0 = Date.now();
+            if (text) {
+                const base = sizeMB
+                    ? '正在上传并解析 ' + sizeMB + ' MB 的文件，请稍候…'
+                    : '正在上传并解析，请稍候…';
+                text.textContent = base;
+                setInterval(function () {
+                    const s = Math.floor((Date.now() - t0) / 1000);
+                    text.textContent = base + '（已用 ' + s + ' 秒）';
+                }, 1000);
+            }
+
+            // 表单本身照常提交；提交后页面会跳转到导入报告
+        });
+    });
+})();
+</script>
+{% endblock %}

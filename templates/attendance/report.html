@@ -1,0 +1,165 @@
+{% extends 'base.html' %}
+
+{% block title %}生成考勤表 - 考勤管理系统{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-file-earmark-excel"></i> 生成考勤表</h2>
+            <p class="text-muted mb-0">
+                按月度生成考勤表，包含「每日明细」与「月度汇总」两个 Sheet。
+            </p>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0">报表参数</h5></div>
+        <div class="card-body">
+            <form id="reportForm" class="row g-3 align-items-end">
+                {% csrf_token %}
+                <div class="col-md-3">
+                    <label class="form-label" for="reportPeriod">账期 <span class="text-danger">*</span></label>
+                    <select class="form-select" id="reportPeriod" name="period" required>
+                        <option value="">请选择月份</option>
+                        {% for p in periods %}
+                        <option value="{{ p }}">{{ p }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="reportShould">应出勤天数</label>
+                    <input type="number" step="0.5" class="form-control" id="reportShould"
+                           value="{{ rule.monthly_standard_days }}" disabled>
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-primary" id="reportBtn">
+                        <i class="bi bi-download"></i> 生成并下载
+                    </button>
+                </div>
+            </form>
+
+            <div id="reportStatus" class="alert alert-info py-2 small mt-3{% if not periods %} d-none{% endif %}" role="status">
+                应出勤天数取自<a href="{% url 'attendance:rule_config' %}">考勤规则配置</a>，
+                当前为 {{ rule.monthly_standard_days }} 天。
+            </div>
+
+            {% if not periods %}
+            <div class="alert alert-warning mt-3 mb-0 py-2 small">
+                还没有导入任何数据，请先到<a href="{% url 'attendance:upload' %}">数据上传</a>导入。
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0">报表内容</h5></div>
+        <div class="card-body small">
+            <p class="mb-2">
+                <strong>Sheet1「考勤处理数据1」—— 每日明细</strong>：逐人逐日的
+                打卡时间与结果、班次、迟到/早退时长、上下班缺卡次数、当月加班合计。
+                同一人的姓名、部门、职位与统计列纵向合并；请假/出差/迟到/缺卡/外勤/
+                外出按状态着色，周末日期标红。
+            </p>
+            <p class="mb-0">
+                <strong>Sheet2「考勤统计2」—— 月度汇总</strong>：序号、姓名、部门、
+                出勤（应出勤 / 出勤打卡 / 实际出勤）、各类请假天数、缺勤
+                （迟到分 / 早退分 / 旷工天 / 上下班忘打卡次数）、加班小时，
+                以及备注与员工签字栏。「实际出勤」保留 Excel 公式，可在表内继续计算。
+            </p>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><h5 class="mb-0">口径说明</h5></div>
+        <div class="card-body small">
+            <ul class="mb-0">
+                <li><strong>应出勤</strong>：取自规则配置的
+                    <code>{{ rule.monthly_standard_days }}</code> 天。</li>
+                <li><strong>出勤打卡</strong>：源文件「出勤天数」按月累计。</li>
+                <li><strong>实际出勤</strong>：<code>= 出勤打卡 − 事假</code>（Excel 公式）。</li>
+                <li><strong>加班</strong>：<code>Σ max(0, (当日工作时长 − {{ rule.standard_work_minutes }}) ÷ 60)</code>
+                    {% if not rule.clamp_negative_overtime %}
+                    <span class="text-danger">—— 当前规则<b>未</b>截断负值，报表会与历史口径不同</span>
+                    {% endif %}。</li>
+                <li><strong>请假</strong>：{% if rule.exclude_rejected_leave %}只统计审批结果为「同意」的记录，{% else %}
+                    <span class="text-danger">当前<b>未</b>排除未通过的记录，</span>{% endif %}
+                    按「开始时间」归属月份，天与小时统一折算。</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var form = document.getElementById('reportForm');
+    var status = document.getElementById('reportStatus');
+    var btn = document.getElementById('reportBtn');
+    if (!form || !btn) return;
+
+    var timer = null;
+
+    function show(text, cls) {
+        if (!status) return;
+        status.className = 'alert alert-' + cls + ' py-2 small mt-3';
+        status.textContent = text;
+    }
+
+    function stopTimer() {
+        if (timer) { clearInterval(timer); timer = null; }
+    }
+
+    function restoreButton() {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-download"></i> 生成并下载';
+    }
+
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var period = document.getElementById('reportPeriod').value;
+        if (!period) { show('请先选择账期。', 'warning'); return; }
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 正在生成…';
+        show('正在生成报表，请稍候…', 'info');
+
+        var started = Date.now();
+        timer = setInterval(function () {
+            var s = Math.floor((Date.now() - started) / 1000);
+            show('正在生成报表，请稍候…（已用 ' + s + ' 秒）', 'info');
+        }, 1000);
+
+        var body = new FormData();
+        body.append('period', period);
+        body.append('csrfmiddlewaretoken', csrftoken);
+
+        fetch(SCRIPT_PREFIX + '{% url "attendance:report_generate" %}', {
+            method: 'POST',
+            headers: {'X-CSRFToken': csrftoken},
+            body: body
+        }).then(function (resp) {
+            return resp.json().then(function (data) {
+                return {ok: resp.ok, data: data};
+            });
+        }).then(function (r) {
+            stopTimer();
+            if (!r.ok || !r.data.success) {
+                show('生成失败：' + (r.data && r.data.message ? r.data.message : '未知错误'), 'danger');
+                restoreButton();
+                return;
+            }
+            var kb = Math.round((r.data.size || 0) / 1024);
+            show('已生成 ' + r.data.filename + '（' + kb + ' KB），正在开始下载…', 'success');
+            restoreButton();
+            window.location.href = SCRIPT_PREFIX + r.data.url;
+        }).catch(function (err) {
+            stopTimer();
+            show('请求失败：' + err + '，请重试。', 'danger');
+            restoreButton();
+        });
+    });
+})();
+</script>
+{% endblock %}

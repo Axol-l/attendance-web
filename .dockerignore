@@ -1,0 +1,107 @@
+# ==========================================
+# 考勤模块 Web 化 —— Docker 构建上下文排除规则
+# 目的：缩小构建上下文、避免把本地开发产物与敏感的考勤原始数据打进镜像
+# ==========================================
+
+# 版本控制
+.git/
+.gitignore
+
+# 虚拟环境（宿主机本地依赖，容器内由 pip 重新安装）
+venv/
+env/
+ENV/
+.venv/
+
+# ⚠️ 数据库备份文件（可能含真实考勤数据，体积大）
+# 注意 1：不能排除整个 backups/ 目录 —— 它同时是 Django app（backups/models.py、
+#         backups/migrations/）和运行时备份目录。
+# 注意 2：Docker 用 Go filepath.Match 语义，`*.sql` 的 * 不跨 `/`，只匹配根目录，
+#         必须用 `**/*.sql` 才能匹配 backups/ 下的备份文件。
+*.sql
+**/*.sql
+**/*.sql.zip
+**/*.zip
+
+# ⚠️ 考勤原始数据与生成的报表：含员工姓名、工号等个人信息，禁止进镜像
+media/
+uploads/
+reports/
+*.xlsx
+*.xls
+**/*.xlsx
+**/*.xls
+
+# ⚠️ 例外：报表模板是**代码资产**，必须随镜像走（否则生成报表会失败）。
+#    Docker 的排除规则按顺序生效，后面的 `!` 可以覆盖前面的排除，
+#    但**父目录若被排除则无法再包含子文件**，所以上面只排除文件类型、
+#    没有排除整个 attendance/ 目录 —— 这里才能把模板捞回来。
+!attendance/templates_xlsx/*.xlsx
+
+# 静态文件收集产物（运行时由卷挂载 / collectstatic 生成）
+staticfiles/
+static_collected/
+
+# 日志
+logs/
+*.log
+
+# 环境变量文件（含口令，禁止进镜像）
+.env
+.env.local
+.env.production
+
+# Python 缓存
+#
+# ⚠️ 必须带 `**/` 前缀！只写 `__pycache__/` 在 Docker 的匹配语义下**只排除顶层目录**，
+#    嵌套的 `attendance/__pycache__` 会被漏掉。
+#
+#    实测后果：本地跑过测试后，`attendance/__pycache__/tests.cpython-312.pyc`
+#    被静默打进镜像（312 = 宿主机的 Python，容器里是 3.10，一眼就能看出不对）。
+#    `.pyc` 里保留着字符串常量 —— 也就是测试夹具里的**真实员工姓名**。
+#    而"排除测试文件"的两条规则管不到它，因为源文件确实没进去，进去的是字节码。
+__pycache__/
+**/__pycache__/
+*.py[cod]
+**/*.py[cod]
+*$py.class
+**/*$py.class
+.pytest_cache/
+**/.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE / 操作系统文件
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 文档与参考数据（运行时不依赖）
+docs/
+参考数据/
+
+# ⚠️ 测试与开发期脚本：运行时不依赖，且**含真实姓名作为夹具/比对键**。
+#    实测曾把它们打进镜像，导致员工姓名随镜像分发出去。
+#
+## ⚠️ 模式必须用 `**/test*.py`，不能只写 `**/tests.py` + `**/test_*.py`：
+#    后者匹配不到 `tests_report.py`（`test_*` 要求前缀是 "test_"，而它是 "tests_"），
+#    结果这个含夹具的测试文件一直被静默打进镜像。`test*.py` 同时覆盖
+#    tests.py / tests_report.py / test_xxx.py。
+#    另外 `**/*_test.py` 覆盖 `config/settings_test.py` 这类"测试专用配置"——
+#    它同样不该进生产镜像，但名字不以 test 开头，容易被漏掉。
+tools/
+**/tests.py
+**/test*.py
+**/*_test.py
+**/*_tests.py
+**/conftest.py
+
+# 其他构建产物
+*.egg-info/
+dist/
+build/

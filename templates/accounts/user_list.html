@@ -1,0 +1,252 @@
+﻿{% extends 'base.html' %}
+
+{% block title %}用户管理 - 考勤管理系统{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row mb-4">
+        <div class="col"><h2><i class="bi bi-people"></i> 用户管理</h2></div>
+        <div class="col-auto">
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal">
+                <i class="bi bi-plus"></i> 新增用户
+            </button>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body py-2">
+            <small class="text-muted">
+                <strong>super_admin</strong> — 超级管理员（全部权限 + Django 后台） &nbsp;|&nbsp;
+                <strong>admin</strong> — 管理员（全部业务权限） &nbsp;|&nbsp;
+                <strong>user</strong> — 普通用户（按需分配权限）
+            </small>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>用户名</th>
+                            <th>角色</th>
+                            <th>权限</th>
+                            <th>状态</th>
+                            <th>注册时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for u in users %}
+                        <tr id="user-{{ u.id }}">
+                            <td><strong>{{ u.username }}</strong></td>
+                            <td>
+                                {% if u.is_superuser %}
+                                <span class="badge bg-danger">超级管理员</span>
+                                {% elif u.profile.role == 'admin' %}
+                                <span class="badge bg-warning text-dark">管理员</span>
+                                {% else %}
+                                <span class="badge bg-secondary">普通用户</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if u.profile.is_admin %}
+                                <span class="text-muted">全部</span>
+                                {% else %}
+                                {% for perm in u.custom_permissions.all %}
+                                <span class="badge bg-light text-dark">{{ perm.permission_code }}</span>
+                                {% empty %}
+                                <span class="text-muted">无</span>
+                                {% endfor %}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if u.is_active %}
+                                <span class="badge bg-success">启用</span>
+                                {% else %}
+                                <span class="badge bg-secondary">禁用</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ u.date_joined|date:"Y-m-d H:i" }}</td>
+                            <td>
+                                {% if not u.is_superuser or request.user.is_superuser %}
+                                <button type="button" class="btn btn-sm btn-outline-primary"
+                                        onclick="editUser({{ u.id }}, '{{ u.profile.role }}', {{ u.is_active|yesno:'true,false' }}, '{{ u.custom_permissions.all|join:"," }}')">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                {% if u.id != request.user.id %}
+                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteUser({{ u.id }})">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                                {% endif %}
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 新增用户 -->
+<div class="modal fade" id="addModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">新增用户</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addForm">
+                    <div class="mb-3">
+                        <label class="form-label">用户名 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">密码 <span class="text-danger">*</span></label>
+                        <input type="password" class="form-control" name="password" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">角色</label>
+                        <select class="form-select" name="role" id="addRole" onchange="togglePerms('add')">
+                            <option value="user">普通用户</option>
+                            <option value="admin">管理员</option>
+                            {% if request.user.is_superuser %}
+                            <option value="super_admin">超级管理员</option>
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div class="mb-3" id="addPermsBox">
+                        <label class="form-label">权限</label>
+                        {% for code, label in permission_codes %}
+                        <div class="form-check">
+                            <input class="form-check-input add-perm" type="checkbox" name="permissions" value="{{ code }}" id="add_{{ code }}">
+                            <label class="form-check-label" for="add_{{ code }}">{{ label }}</label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="createUser()">创建</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑用户 -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">编辑用户</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editForm">
+                    <input type="hidden" name="id" id="editId">
+                    <div class="mb-3">
+                        <label class="form-label">角色</label>
+                        <select class="form-select" name="role" id="editRole" onchange="togglePerms('edit')">
+                            <option value="user">普通用户</option>
+                            <option value="admin">管理员</option>
+                            {% if request.user.is_superuser %}
+                            <option value="super_admin">超级管理员</option>
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div class="mb-3" id="editPermsBox">
+                        <label class="form-label">权限</label>
+                        {% for code, label in permission_codes %}
+                        <div class="form-check">
+                            <input class="form-check-input edit-perm" type="checkbox" name="permissions" value="{{ code }}" id="edit_{{ code }}">
+                            <label class="form-check-label" for="edit_{{ code }}">{{ label }}</label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">新密码（留空不修改）</label>
+                        <input type="password" class="form-control" name="password">
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="editIsActive" name="is_active">
+                            <label class="form-check-label" for="editIsActive">启用</label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="updateUser()">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function togglePerms(prefix) {
+    const role = document.getElementById(prefix + 'Role').value;
+    document.getElementById(prefix + 'PermsBox').style.display = (role === 'user') ? '' : 'none';
+}
+
+function createUser() {
+    const fd = new FormData(document.getElementById('addForm'));
+    fd.set('is_active', 'true');
+    fetch('{% url "accounts:user_create" %}', {
+        method: 'POST', headers: {'X-CSRFToken': csrftoken}, body: fd
+    }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(data => { if (data.success) location.reload(); else alert(data.message); })
+    .catch(err => alert('操作失败：' + err));
+}
+
+function editUser(id, role, isActive, permsStr) {
+    document.getElementById('editId').value = id;
+    document.getElementById('editRole').value = role;
+    document.getElementById('editIsActive').checked = isActive;
+    togglePerms('edit');
+
+    document.querySelectorAll('.edit-perm').forEach(cb => cb.checked = false);
+    if (permsStr) {
+        permsStr.split(',').forEach(p => {
+            const parts = p.trim().split(' - ');
+            if (parts.length > 0) {
+                const code = parts[parts.length - 1].trim();
+                const el = document.getElementById('edit_' + code);
+                if (el) el.checked = true;
+            }
+        });
+    }
+
+    new bootstrap.Modal(document.getElementById('editModal')).show();
+}
+
+function updateUser() {
+    const id = document.getElementById('editId').value;
+    const fd = new FormData(document.getElementById('editForm'));
+    fd.set('is_active', document.getElementById('editIsActive').checked ? 'true' : 'false');
+    fetch(`${SCRIPT_PREFIX}/accounts/users/${id}/update/`, {
+        method: 'POST', headers: {'X-CSRFToken': csrftoken}, body: fd
+    }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(data => { if (data.success) location.reload(); else alert(data.message); })
+    .catch(err => alert('操作失败：' + err));
+}
+
+function deleteUser(id) {
+    if (!confirm('确定要删除此用户吗？')) return;
+    fetch(`${SCRIPT_PREFIX}/accounts/users/${id}/delete/`, {
+        method: 'POST', headers: {'X-CSRFToken': csrftoken}
+    }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(data => {
+        if (data.success) { document.getElementById('user-' + id).remove(); alert('删除成功'); }
+        else alert(data.message);
+    }).catch(err => alert('操作失败：' + err));
+}
+</script>
+{% endblock %}

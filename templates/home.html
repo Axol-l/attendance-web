@@ -1,0 +1,160 @@
+{% extends 'base.html' %}
+
+{% block title %}首页 - 考勤管理系统{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-speedometer2"></i> 系统概览</h2>
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <div class="col-md-4">
+            <div class="card bg-primary text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title mb-0">日考勤明细</h6>
+                            <h2 class="mb-0">{{ daily_count|default:0 }}</h2>
+                        </div>
+                        <i class="bi bi-calendar2-week fs-1 opacity-50"></i>
+                    </div>
+                </div>
+                <div class="card-footer bg-transparent border-0">
+                    <a href="{% url 'attendance:daily_list' %}" class="text-white text-decoration-none">
+                        查看明细 <i class="bi bi-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-success text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title mb-0">请假记录</h6>
+                            <h2 class="mb-0">{{ leave_count|default:0 }}</h2>
+                        </div>
+                        <i class="bi bi-airplane fs-1 opacity-50"></i>
+                    </div>
+                </div>
+                <div class="card-footer bg-transparent border-0">
+                    <a href="{% url 'attendance:leave_list' %}" class="text-white text-decoration-none">
+                        查看明细 <i class="bi bi-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-info text-white h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title mb-0">导入文件</h6>
+                            <h2 class="mb-0">{{ file_count|default:0 }}</h2>
+                        </div>
+                        <i class="bi bi-file-earmark-excel fs-1 opacity-50"></i>
+                    </div>
+                </div>
+                <div class="card-footer bg-transparent border-0">
+                    <a href="{% url 'attendance:file_list' %}" class="text-white text-decoration-none">
+                        查看记录 <i class="bi bi-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-lightning"></i> 快捷操作</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        {% if user_perms.attendance_upload %}
+                        <div class="col-md-3">
+                            <a href="{% url 'attendance:upload' %}" class="btn btn-outline-primary w-100 py-3">
+                                <i class="bi bi-upload fs-4 d-block mb-2"></i>
+                                上传数据
+                            </a>
+                        </div>
+                        {% endif %}
+                        {% if user_perms.attendance_query %}
+                        <div class="col-md-3">
+                            <a href="{% url 'attendance:daily_list' %}" class="btn btn-outline-success w-100 py-3">
+                                <i class="bi bi-list-ul fs-4 d-block mb-2"></i>
+                                每日明细
+                            </a>
+                        </div>
+                        <div class="col-md-3">
+                            <a href="{% url 'attendance:leave_list' %}" class="btn btn-outline-success w-100 py-3">
+                                <i class="bi bi-airplane fs-4 d-block mb-2"></i>
+                                请假记录
+                            </a>
+                        </div>
+                        <div class="col-md-3">
+                            <a href="{% url 'attendance:monthly_summary' %}" class="btn btn-outline-info w-100 py-3">
+                                <i class="bi bi-calendar3 fs-4 d-block mb-2"></i>
+                                月度汇总
+                            </a>
+                        </div>
+                        {% endif %}
+                        {% if user_perms.attendance_report %}
+                        <div class="col-md-3">
+                            <a href="{% url 'attendance:report_generate' %}" class="btn btn-outline-secondary w-100 py-3">
+                                <i class="bi bi-file-earmark-excel fs-4 d-block mb-2"></i>
+                                生成考勤表
+                            </a>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if recent_files %}
+    <div class="row">
+        <div class="col">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-clock-history"></i> 最近导入</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>文件名</th>
+                                    <th>类型</th>
+                                    <th>账期</th>
+                                    <th>记录数</th>
+                                    <th>上传人</th>
+                                    <th>上传时间</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for f in recent_files %}
+                                <tr>
+                                    <td>{{ f.original_filename }}</td>
+                                    <td>{{ f.get_file_kind_display }}</td>
+                                    <td>{{ f.period|default:"-" }}</td>
+                                    <td>{{ f.record_count }}</td>
+                                    <td>{{ f.uploaded_by.username }}</td>
+                                    <td>{{ f.uploaded_at|date:"Y-m-d H:i" }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

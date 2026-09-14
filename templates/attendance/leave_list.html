@@ -1,0 +1,161 @@
+{% extends 'base.html' %}
+
+{% block title %}请假记录 - 考勤管理系统{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-airplane"></i> 请假记录</h2>
+            <p class="text-muted mb-0">
+                来自钉钉请假单据的原始记录。月度汇总只看得到每人每类几天，
+                这里可以逐条核对与追溯。
+            </p>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label">姓名</label>
+                    <input type="text" class="form-control" name="name"
+                           value="{{ filters.name }}" placeholder="模糊匹配">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">审批编号</label>
+                    <input type="text" class="form-control" name="approval_no"
+                           value="{{ filters.approval_no }}" placeholder="模糊匹配">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">请假类型</label>
+                    <select class="form-select" name="leave_type">
+                        <option value="">全部</option>
+                        {% for t in leave_types %}
+                        <option value="{{ t }}" {% if filters.leave_type == t %}selected{% endif %}>{{ t }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">账期</label>
+                    <select class="form-select" name="period">
+                        <option value="">全部</option>
+                        {% for p in periods %}
+                        <option value="{{ p }}" {% if filters.period == p %}selected{% endif %}>{{ p }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">审批状态</label>
+                    <select class="form-select" name="status">
+                        <option value="">全部</option>
+                        <option value="approved" {% if filters.status == 'approved' %}selected{% endif %}>已通过</option>
+                        <option value="rejected" {% if filters.status == 'rejected' %}selected{% endif %}>未通过</option>
+                        <option value="resigned" {% if filters.status == 'resigned' %}selected{% endif %}>离职人员</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-outline-primary">
+                        <i class="bi bi-search"></i> 查询
+                    </button>
+                    <a href="{% url 'attendance:leave_list' %}" class="btn btn-outline-secondary">重置</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if over_limit %}
+    <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle"></i>
+        命中 <strong>{{ total }}</strong> 条，超过单次展示上限
+        <strong>{{ max_results }}</strong> 条。请增加筛选条件后再查询。
+    </div>
+    {% else %}
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>
+                共 <strong>{{ total }}</strong> 条
+                <span class="text-muted small ms-2">
+                    其中已通过 {{ approved_count }} 条、离职人员 {{ resigned_count }} 条
+                </span>
+            </span>
+            {% if page %}
+            <span class="text-muted small">第 {{ page.number }} / {{ page.paginator.num_pages }} 页</span>
+            {% endif %}
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover table-bordered mb-0 text-nowrap">
+                    <thead class="table-light">
+                        <tr>
+                            <th>审批编号</th>
+                            <th>姓名</th>
+                            <th>部门</th>
+                            <th>请假类型</th>
+                            <th>开始时间</th>
+                            <th>结束时间</th>
+                            <th class="text-end">时长<br>(小时)</th>
+                            <th class="text-end">折算<br>(天)</th>
+                            <th>审批状态</th>
+                            <th>审批结果</th>
+                            <th>账期</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in page %}
+                        <tr {% if not r.is_approved %}class="table-warning"{% endif %}>
+                            <td><code>{{ r.approval_no }}</code></td>
+                            <td>
+                                {{ r.applicant_name }}
+                                {% if r.is_resigned %}
+                                <span class="badge bg-secondary">离职</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ r.applicant_dept|default:"-" }}</td>
+                            <td>{{ r.leave_type }}</td>
+                            <td>{{ r.start_time|date:"Y-m-d H:i" }}</td>
+                            <td>{{ r.end_time|date:"Y-m-d H:i"|default:"-" }}</td>
+                            <td class="text-end">{{ r.duration_hours|floatformat:2 }}</td>
+                            <td class="text-end">{{ r.duration_days|floatformat:2 }}</td>
+                            <td>{{ r.approval_status|default:"-" }}</td>
+                            <td>
+                                {% if r.is_approved %}<span class="text-success">同意</span>
+                                {% else %}<span class="text-danger">{{ r.approval_result|default:"未通过" }}</span>{% endif %}
+                            </td>
+                            <td>{{ r.period }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="11" class="text-center text-muted py-4">没有符合条件的记录</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% if page and page.has_other_pages %}
+        <div class="card-footer">
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if page.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page.previous_page_number }}&name={{ filters.name|urlencode }}&approval_no={{ filters.approval_no|urlencode }}&leave_type={{ filters.leave_type|urlencode }}&period={{ filters.period }}&status={{ filters.status }}">上一页</a>
+                    </li>
+                    {% endif %}
+                    <li class="page-item disabled"><span class="page-link">{{ page.number }} / {{ page.paginator.num_pages }}</span></li>
+                    {% if page.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page.next_page_number }}&name={{ filters.name|urlencode }}&approval_no={{ filters.approval_no|urlencode }}&leave_type={{ filters.leave_type|urlencode }}&period={{ filters.period }}&status={{ filters.status }}">下一页</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="mt-3 small text-muted">
+        黄色底纹的行是<strong>未通过</strong>（审批结果非"同意"）的记录。
+        月度汇总默认不统计这些记录，但这里保留可查，便于核对。
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

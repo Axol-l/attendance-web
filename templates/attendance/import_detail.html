@@ -1,0 +1,184 @@
+{% extends 'base.html' %}
+
+{% block title %}导入报告 - 考勤管理系统{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-clipboard-check"></i> 导入报告</h2>
+            <p class="text-muted mb-0">{{ record.original_filename }}</p>
+        </div>
+        <div class="col-auto">
+            <a href="{% url 'attendance:import_preview' record.pk %}" class="btn btn-outline-info">
+                <i class="bi bi-eye"></i> 解析预览
+            </a>
+            <a href="{% url 'attendance:file_list' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-list"></i> 返回列表
+            </a>
+        </div>
+    </div>
+
+    {# ── 概要 ── #}
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0">概要</h5></div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <div class="text-muted small">文件类型</div>
+                    <div><strong>{{ record.get_file_kind_display }}</strong></div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">账期</div>
+                    <div><strong>{{ record.period|default:"-" }}</strong></div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">状态</div>
+                    <div>
+                        {% if record.status == 'success' %}<span class="badge bg-success">{{ record.get_status_display }}</span>
+                        {% elif record.status == 'failed' %}<span class="badge bg-danger">{{ record.get_status_display }}</span>
+                        {% elif record.status == 'partial' %}<span class="badge bg-warning text-dark">{{ record.get_status_display }}</span>
+                        {% else %}<span class="badge bg-secondary">{{ record.get_status_display }}</span>{% endif %}
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">文件大小</div>
+                    <div><strong>{{ record.file_size_display }}</strong></div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">成功导入</div>
+                    <div><strong class="text-success">{{ record.record_count }}</strong> 条</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">跳过</div>
+                    <div><strong class="text-warning">{{ record.skipped_count }}</strong> 条</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">上传人</div>
+                    <div>{{ record.uploaded_by.username }}</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">处理时间</div>
+                    <div>{{ record.processed_at|date:"Y-m-d H:i:s"|default:"-" }}</div>
+                </div>
+            </div>
+            {% if record.file_hash %}
+            <div class="mt-3 small text-muted">
+                SHA256: <code>{{ record.file_hash }}</code>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {# ── 失败原因 ── #}
+    {% if record.status == 'failed' and record.error_message %}
+    <div class="alert alert-danger">
+        <h5 class="alert-heading"><i class="bi bi-x-octagon"></i> 导入失败</h5>
+        <p class="mb-0"><code>{{ record.error_message }}</code></p>
+    </div>
+    {% endif %}
+
+    {# ── 覆盖掉的旧数据 ── #}
+    {% if purged %}
+    <div class="alert alert-info">
+        <i class="bi bi-arrow-repeat"></i>
+        已按「覆盖」策略清空账期 <strong>{{ purged.period }}</strong> 的旧数据：
+        <strong>{{ purged.records }}</strong> 条记录，涉及 {{ purged.files }} 个历史导入文件。
+    </div>
+    {% endif %}
+
+    {# ── 各 Sheet 统计 ── #}
+    {% if sheets %}
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0">Sheet 明细</h5></div>
+        <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+                <thead class="table-light">
+                    <tr><th>Sheet 名</th><th class="text-end">导入</th><th class="text-end">跳过</th></tr>
+                </thead>
+                <tbody>
+                    {% for s in sheets %}
+                    <tr>
+                        <td><code>{{ s.sheet }}</code></td>
+                        <td class="text-end">{{ s.imported }}</td>
+                        <td class="text-end">{{ s.skipped }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ── 错误明细 ── #}
+    {% if errors %}
+    <div class="card mb-4 border-danger">
+        <div class="card-header bg-danger text-white">
+            <h5 class="mb-0"><i class="bi bi-exclamation-octagon"></i> 错误 {{ errors|length }} 条</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive" style="max-height:400px;">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>Sheet</th><th>行号</th><th>字段</th><th>值</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for e in errors %}
+                        <tr>
+                            <td>{% if e.sheet %}<code>{{ e.sheet }}</code>{% else %}-{% endif %}</td>
+                            <td>{{ e.row|default:"-" }}</td>
+                            <td>{{ e.field|default:"-" }}</td>
+                            <td class="text-truncate" style="max-width:220px;">{{ e.value|default:"-" }}</td>
+                            <td>{{ e.message }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ── 被排除的人员 ── #}
+    {% if excluded %}
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-person-dash"></i> 被排除的人员 {{ excluded|length }} 名</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive" style="max-height:300px;">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light"><tr><th>姓名</th><th>排除原因</th></tr></thead>
+                    <tbody>
+                        {% for e in excluded %}
+                        <tr><td>{{ e.name }}</td><td class="text-muted">{{ e.reason }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer small text-muted">
+            这些人的行未入库。规则可在<a href="{% url 'attendance:rule_config' %}">考勤规则配置</a>中调整。
+        </div>
+    </div>
+    {% endif %}
+
+    {# ── 警告 ── #}
+    {% if warnings %}
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0"><i class="bi bi-info-circle"></i> 提示 {{ warnings|length }} 条</h5></div>
+        <div class="card-body">
+            <ul class="mb-0 small">
+                {% for w in warnings %}<li>{{ w }}</li>{% endfor %}
+            </ul>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if not errors and not warnings and not excluded and record.status == 'success' %}
+    <div class="alert alert-success">
+        <i class="bi bi-check-circle"></i> 导入干净完成，没有错误、警告或被排除的记录。
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

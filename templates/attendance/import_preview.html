@@ -1,0 +1,129 @@
+{% extends 'base.html' %}
+
+{% block title %}解析预览 - 考勤管理系统{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-eye"></i> 解析预览</h2>
+            <p class="text-muted mb-0">
+                {{ record.original_filename }} —— 只解析不入库，用于确认这个文件被认成了什么。
+            </p>
+        </div>
+        <div class="col-auto">
+            <a href="{% url 'attendance:import_detail' record.pk %}" class="btn btn-outline-primary">
+                <i class="bi bi-clipboard-check"></i> 导入报告
+            </a>
+        </div>
+    </div>
+
+    {% for s in sheets %}
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Sheet：<code>{{ s.sheet }}</code></h5>
+        </div>
+        <div class="card-body">
+
+            {% if s.error %}
+            <div class="alert alert-danger mb-3">
+                <strong>解析失败：</strong>{{ s.error }}
+            </div>
+            {% endif %}
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-2">
+                    <div class="text-muted small">行数</div><div><strong>{{ s.max_row }}</strong></div>
+                </div>
+                <div class="col-md-2">
+                    <div class="text-muted small">列数</div><div><strong>{{ s.max_col }}</strong></div>
+                </div>
+                <div class="col-md-2">
+                    <div class="text-muted small">合并区域</div><div><strong>{{ s.merged }}</strong></div>
+                </div>
+                {% if s.header_rows %}
+                <div class="col-md-3">
+                    <div class="text-muted small">探测到的表头行</div>
+                    <div>
+                        {% for r in s.header_rows %}
+                        <span class="badge bg-secondary">第 {{ r }} 行</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+                {% if s.leave_leaf_count is not None %}
+                <div class="col-md-3">
+                    <div class="text-muted small">「请假」大类展开出的子类</div>
+                    <div>
+                        {% if s.leave_leaf_count == 10 %}
+                        <span class="badge bg-success">{{ s.leave_leaf_count }} 个 ✓</span>
+                        {% else %}
+                        <span class="badge bg-danger">{{ s.leave_leaf_count }} 个（应为 10）</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            {% if s.unknown %}
+            <div class="alert alert-warning py-2">
+                <strong>未映射的列 {{ s.unknown|length }} 个</strong>，会被忽略：
+                {% for u in s.unknown %}<code>{{ u }}</code>{% if not forloop.last %}、{% endif %}{% endfor %}
+            </div>
+            {% else %}
+            <div class="alert alert-success py-2 mb-3">
+                <i class="bi bi-check-circle"></i> 所有列都已映射，没有无法识别的列。
+            </div>
+            {% endif %}
+
+            <h6 class="mt-3">表头识别结果</h6>
+            <div class="table-responsive" style="max-height:320px;">
+                <table class="table table-sm table-bordered mb-3">
+                    <thead class="table-light">
+                        <tr><th>列</th><th>大类</th><th>子类</th><th>映射到模型字段</th><th>状态</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for c in s.columns %}
+                        <tr>
+                            <td><code>{{ c.letter }}</code></td>
+                            <td>{% if c.group %}<span class="badge bg-info text-dark">{{ c.group }}</span>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                            <td>{{ c.leaf }}</td>
+                            <td>{% if c.mapped %}<code>{{ c.mapped }}</code>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                            <td>
+                                {% if c.mapped %}<span class="text-success">✓ 已映射</span>
+                                {% else %}<span class="text-warning">未映射</span>{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% if s.samples %}
+            <h6 class="mt-3">数据样本</h6>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Excel 行</th>
+                            {% for c in s.columns %}<th><code>{{ c.letter }}</code></th>{% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in s.samples %}
+                        <tr>
+                            <td><strong>{{ row.row }}</strong></td>
+                            {% for v in row.cells %}
+                            <td class="text-nowrap">{{ v|default:"-" }}</td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

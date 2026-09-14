@@ -1,0 +1,197 @@
+{% extends 'base.html' %}
+
+{% block title %}月度汇总 - 考勤管理系统{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col"><h2><i class="bi bi-calendar3"></i> 月度汇总</h2></div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label">账期</label>
+                    <select class="form-select" name="period">
+                        <option value="">请选择月份</option>
+                        {% for p in periods %}
+                        <option value="{{ p }}" {% if period == p %}selected{% endif %}>{{ p }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">跨月对比（可多选，最多 3 个）</label>
+                    <select class="form-select" name="compare" multiple size="1">
+                        {% for p in periods %}
+                        {% if p != period %}
+                        <option value="{{ p }}" {% if p in compare_periods %}selected{% endif %}>{{ p }}</option>
+                        {% endif %}
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">按住 Ctrl / Cmd 多选。</div>
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-outline-primary">
+                        <i class="bi bi-search"></i> 查询
+                    </button>
+                    <a href="{% url 'attendance:monthly_summary' %}" class="btn btn-outline-secondary">重置</a>
+                    {% if period and user_perms.attendance_report %}
+                    <a href="{% url 'attendance:report_generate' %}" class="btn btn-outline-success">
+                        <i class="bi bi-file-earmark-excel"></i> 生成报表
+                    </a>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if not period %}
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i> 请选择账期查看月度汇总。
+    </div>
+    {% elif not rows %}
+    <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle"></i> {{ period }} 没有考勤数据。
+    </div>
+    {% else %}
+    <div class="card">
+        <div class="card-header">
+            <strong>{{ period }} 月度汇总</strong>
+            <span class="text-muted small ms-2">共 {{ rows|length }} 人</span>
+            {% if rows %}
+            <span class="text-muted small ms-2">
+                · 合计加班 {{ total_overtime|floatformat:1 }} H
+                · 合计出勤 {{ total_attend|floatformat:0 }} 天
+            </span>
+            {% endif %}
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover table-bordered mb-0 text-nowrap">
+                    <thead class="table-light">
+                        <tr>
+                            <th rowspan="2" class="align-middle">姓名</th>
+                            <th rowspan="2" class="align-middle">部门</th>
+                            <th colspan="3" class="text-center">出勤</th>
+                            <th colspan="{{ leave_columns|length }}" class="text-center">请假</th>
+                            <th colspan="2" class="text-center">迟到早退</th>
+                            <th rowspan="2" class="align-middle text-end">旷工<br>(天)</th>
+                            <th colspan="2" class="text-center">忘打卡</th>
+                            <th rowspan="2" class="align-middle text-end">加班<br>(H)</th>
+                        </tr>
+                        <tr>
+                            <th class="text-end">应出勤</th>
+                            <th class="text-end">出勤打卡</th>
+                            <th class="text-end">实际出勤</th>
+                            {% for col in leave_columns %}<th class="text-end">{{ col }}</th>{% endfor %}
+                            <th class="text-end">迟到(分)</th>
+                            <th class="text-end">早退(分)</th>
+                            <th class="text-end">上班(次)</th>
+                            <th class="text-end">下班(次)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rows %}
+                        <tr>
+                            <td>{{ r.name }}</td>
+                            <td>{{ r.department|default:"-" }}</td>
+                            <td class="text-end">{{ r.attend_should }}</td>
+                            <td class="text-end">{{ r.attend_days }}</td>
+                            <td class="text-end">{{ r.actual_attend|floatformat:2 }}</td>
+                            {% for v in r.leave %}<td class="text-end">{{ v|floatformat:2 }}</td>{% endfor %}
+                            <td class="text-end">{{ r.late_minutes|floatformat:0 }}</td>
+                            <td class="text-end">{{ r.early_leave_minutes|floatformat:0 }}</td>
+                            <td class="text-end">{{ r.absenteeism_days|floatformat:0 }}</td>
+                            <td class="text-end">{{ r.missing_in_count }}</td>
+                            <td class="text-end">{{ r.missing_out_count }}</td>
+                            <td class="text-end">{{ r.overtime_hours|floatformat:2 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer small text-muted">
+            <strong>口径说明：</strong>
+            实际出勤 = 出勤打卡 − 事假；
+            请假只统计审批结果为「同意」的记录，时长以「天」为单位；
+            加班 = Σ max(0, (当日工作时长 − 标准工作时长) ÷ 60)。
+            这些规则均可在<a href="{% url 'attendance:rule_config' %}">考勤规则配置</a>中调整。
+        </div>
+    </div>
+    {% endif %}
+
+    {% if comparison %}
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-bar-chart"></i> 跨月对比</h5>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-sm table-bordered mb-0 text-nowrap">
+                <thead class="table-light">
+                    <tr>
+                        <th rowspan="2" class="align-middle">指标</th>
+                        {% for p in comparison.periods %}
+                        <th colspan="1" class="text-center">{{ p }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for trow in comparison.total_rows %}
+                    <tr>
+                        <td>{{ trow.label }}</td>
+                        {% for v in trow.values %}
+                        <td class="text-end">{{ v }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive" style="max-height:520px;">
+                <table class="table table-sm table-hover table-bordered mb-0 text-nowrap">
+                    <thead class="table-light">
+                        <tr>
+                            <th rowspan="2" class="align-middle">姓名</th>
+                            {% for p in comparison.periods %}
+                            <th colspan="3" class="text-center">{{ p }}</th>
+                            {% endfor %}
+                        </tr>
+                        <tr>
+                            {% for p in comparison.periods %}
+                            <th class="text-end">出勤</th>
+                            <th class="text-end">加班H</th>
+                            <th class="text-end">请假天</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in comparison.per_person %}
+                        <tr>
+                            <td>{{ row.name }}</td>
+                            {% for c in row.cells %}
+                            {% if c.present %}
+                            <td class="text-end">{{ c.attend }}</td>
+                            <td class="text-end">{{ c.overtime|floatformat:1 }}</td>
+                            <td class="text-end">{{ c.leave|floatformat:1 }}</td>
+                            {% else %}
+                            <td class="text-end text-muted">—</td>
+                            <td class="text-end text-muted">—</td>
+                            <td class="text-end text-muted">—</td>
+                            {% endif %}
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer small text-muted">
+            「—」表示该员工当月不在考勤数据里（尚未入职、已离职或未加入考勤组）。
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

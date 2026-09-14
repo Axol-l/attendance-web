@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+
+{% block title %}导入记录 - 考勤管理系统{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-files"></i> {% if can_see_all %}导入记录{% else %}我的上传{% endif %}</h2>
+            {% if not can_see_all %}
+            <p class="text-muted mb-0">这里只显示您自己上传的文件。</p>
+            {% endif %}
+        </div>
+        {% if user_perms.attendance_upload %}
+        <div class="col-auto">
+            <a href="{% url 'attendance:upload' %}" class="btn btn-primary">
+                <i class="bi bi-upload"></i> 上传新文件
+            </a>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">文件类型</label>
+                    <select class="form-select" name="kind">
+                        <option value="">全部</option>
+                        {% for code, label in file_kinds %}
+                        <option value="{{ code }}" {% if kind == code %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">账期</label>
+                    <input type="month" class="form-control" name="period" value="{{ period }}"
+                           {% if bounds.month_min %}min="{{ bounds.month_min }}"{% endif %}
+                           {% if bounds.month_max %}max="{{ bounds.month_max }}"{% endif %}>
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-outline-primary">
+                        <i class="bi bi-search"></i> 筛选
+                    </button>
+                    <a href="{% url 'attendance:file_list' %}" class="btn btn-outline-secondary">重置</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>文件名</th><th>类型</th><th>账期</th><th>大小</th>
+                            <th>记录数</th><th>跳过</th><th>状态</th>
+                            <th>上传人</th><th>上传时间</th>
+                            {% if user_perms.attendance_upload %}<th>操作</th>{% endif %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in files %}
+                        <tr>
+                            <td>{{ f.original_filename }}</td>
+                            <td>{{ f.get_file_kind_display }}</td>
+                            <td>{{ f.period|default:"-" }}</td>
+                            <td>{{ f.file_size_display }}</td>
+                            <td>{{ f.record_count }}</td>
+                            <td>{{ f.skipped_count }}</td>
+                            <td>
+                                {% if f.status == 'success' %}<span class="badge bg-success">{{ f.get_status_display }}</span>
+                                {% elif f.status == 'failed' %}<span class="badge bg-danger">{{ f.get_status_display }}</span>
+                                {% elif f.status == 'partial' %}<span class="badge bg-warning text-dark">{{ f.get_status_display }}</span>
+                                {% else %}<span class="badge bg-secondary">{{ f.get_status_display }}</span>{% endif %}
+                            </td>
+                            <td>{{ f.uploaded_by.username }}</td>
+                            <td>{{ f.uploaded_at|date:"Y-m-d H:i" }}</td>
+                            {% if user_perms.attendance_upload %}
+                            <td>
+                                <form method="post" action="{% url 'attendance:file_delete' f.pk %}"
+                                      onsubmit="return confirm('删除后该文件导入的考勤/请假数据会一并移除，确认？');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                                        <i class="bi bi-trash"></i> 删除
+                                    </button>
+                                </form>
+                            </td>
+                            {% endif %}
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="10" class="text-center text-muted py-4">暂无导入记录</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% if files.has_other_pages %}
+        <div class="card-footer">
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if files.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ files.previous_page_number }}&kind={{ kind }}&period={{ period }}">上一页</a>
+                    </li>
+                    {% endif %}
+                    <li class="page-item disabled">
+                        <span class="page-link">第 {{ files.number }} / {{ files.paginator.num_pages }} 页，共 {{ files.paginator.count }} 条</span>
+                    </li>
+                    {% if files.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ files.next_page_number }}&kind={{ kind }}&period={{ period }}">下一页</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

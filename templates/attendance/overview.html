@@ -1,0 +1,110 @@
+{% extends 'base.html' %}
+
+{% block title %}考勤概览 - 考勤管理系统{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-calendar2-check"></i> 考勤概览</h2>
+            <p class="text-muted mb-0">考勤数据按月份归档，支持跨月查询。</p>
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <div class="col-md-4">
+            <a href="{% url 'attendance:daily_list' %}" class="stat-card-link">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6 class="text-muted">日考勤明细</h6>
+                        <h2 class="mb-0">{{ daily_count }}</h2>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-4">
+            <a href="{% url 'attendance:leave_list' %}" class="stat-card-link">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6 class="text-muted">请假记录</h6>
+                        <h2 class="mb-0">{{ leave_count }}</h2>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-4">
+            <a href="#periods" class="stat-card-link">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6 class="text-muted">已有账期</h6>
+                        <h2 class="mb-0">{{ periods|length }}</h2>
+                    </div>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    {% if periods %}
+    <div class="card mb-4" id="periods">
+        <div class="card-header"><h5 class="mb-0">账期快捷入口</h5></div>
+        <div class="card-body">
+            {% for p in periods %}
+            <a href="{% url 'attendance:monthly_summary' %}?period={{ p }}"
+               class="btn btn-outline-primary btn-sm me-2 mb-2">
+                <i class="bi bi-calendar3"></i> {{ p }}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i>
+        还没有任何考勤数据。{% if user_perms.attendance_upload %}请先前往
+        <a href="{% url 'attendance:upload' %}">数据上传</a> 导入钉钉导出的
+        日考勤汇总表与请假单据。{% endif %}
+    </div>
+    {% endif %}
+
+    {% if recent_files %}
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">最近导入</h5>
+            <a href="{% url 'attendance:file_list' %}" class="btn btn-sm btn-outline-secondary">全部记录</a>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>文件名</th><th>类型</th><th>账期</th>
+                            <th>记录数</th><th>状态</th><th>上传人</th><th>上传时间</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in recent_files %}
+                        <tr>
+                            <td>{{ f.original_filename }}</td>
+                            <td>{{ f.get_file_kind_display }}</td>
+                            <td>{{ f.period|default:"-" }}</td>
+                            <td>{{ f.record_count }}</td>
+                            <td>
+                                {% if f.status == 'success' %}
+                                <span class="badge bg-success">{{ f.get_status_display }}</span>
+                                {% elif f.status == 'failed' %}
+                                <span class="badge bg-danger">{{ f.get_status_display }}</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{{ f.get_status_display }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ f.uploaded_by.username }}</td>
+                            <td>{{ f.uploaded_at|date:"Y-m-d H:i" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

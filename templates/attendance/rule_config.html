@@ -1,0 +1,161 @@
+{% extends 'base.html' %}
+
+{% block title %}考勤规则配置 - 考勤管理系统{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-sliders"></i> 考勤规则配置</h2>
+            <p class="text-muted mb-0">
+                报表与汇总的计算口径都在这里设定。保存后立即对后续的查询与汇总生效。
+            </p>
+        </div>
+    </div>
+
+    <form id="ruleForm">
+        {% csrf_token %}
+        <div class="card mb-4">
+            <div class="card-header"><h5 class="mb-0">工作时长与应出勤</h5></div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">标准工作时长（分钟）</label>
+                        <input type="number" class="form-control" name="standard_work_minutes"
+                               value="{{ rule.standard_work_minutes }}" min="1" required>
+                        <div class="form-text">
+                            当日工作时长超过此值的部分计为加班。
+                            例如填 450 即 7.5 小时，加班 = (工作时长 − 450) ÷ 60。
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">月应出勤天数</label>
+                        <input type="number" step="0.5" class="form-control" name="monthly_standard_days"
+                               value="{{ rule.monthly_standard_days }}" min="1" required>
+                        <div class="form-text">
+                            每月应出勤的天数，写入报表的「应出勤」列。
+                            各月工作日不同时可逐月调整。
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header"><h5 class="mb-0">数据排除规则</h5></div>
+            <div class="card-body">
+                <div class="alert alert-info py-2 small mb-3">
+                    只排除钉钉里的<strong>系统占位账号</strong>。这类行通常全月无数据，
+                    混进报表只会多出空行。
+                    <br>
+                    <strong>判据是「与」关系：</strong>考勤组命中
+                    <strong>且</strong>满足下方「无信息」条件，才判定为占位账号。
+                    <br>
+                    ⚠️ <strong>不要改成「考勤组命中即排除」</strong>：
+                    该考勤组里混着真实员工，其中有人当月有完整打卡与真实出勤，
+                    整组排除会静默丢掉真实数据。
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">占位账号的考勤组（逗号分隔）</label>
+                        <input type="text" class="form-control" name="excluded_attend_groups"
+                               value="{{ rule.excluded_attend_groups|join:', ' }}">
+                        <div class="form-text">
+                            填钉钉里用于挂载占位账号的考勤组名。多个用逗号分隔。
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">排除严格度</label>
+                        <select class="form-select" name="exclude_mode">
+                            {% for code, label in exclude_modes %}
+                            <option value="{{ code }}" {% if rule.exclude_mode == code %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">
+                            严格度越高，越不容易误伤真人，但可能漏掉部分占位账号。
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">排除人员姓名（逗号分隔）</label>
+                        <input type="text" class="form-control" name="excluded_employees"
+                               value="{{ rule.excluded_employees|join:', ' }}">
+                        <div class="form-text">
+                            按姓名补充排除，优先级高于上面的考勤组规则。
+                            示例：<code>张三,李四</code>。
+                            请只填写确需排除的人，本字段会随规则一起入库。
+                        </div>
+                    </div>
+                </div>
+                <hr>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="exclude_if_no_data"
+                           id="excludeIfNoData" {% if rule.exclude_if_no_data %}checked{% endif %}>
+                    <label class="form-check-label" for="excludeIfNoData">
+                        另外排除「全月无任何打卡与出勤数据」的人
+                        <div class="form-text mb-0">
+                            ⚠️ <strong>默认关闭，建议保持关闭。</strong>
+                            真实员工可能整月没有打卡记录 —— 例如休假中、长期出差、
+                            或高管不打卡。开启本项会把这批人从月报里移除。
+                        </div>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header"><h5 class="mb-0">计算口径</h5></div>
+            <div class="card-body">
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" name="clamp_negative_overtime"
+                           id="clampOvertime" {% if rule.clamp_negative_overtime %}checked{% endif %}>
+                    <label class="form-check-label" for="clampOvertime">
+                        负加班截断为 0
+                        <div class="form-text mb-0">
+                            单日加班 = max(0, (工作时长 − 标准时长) ÷ 60)。
+                            当日工作时长不足标准时长时会产生负值，不截断就会冲减当月加班合计。
+                            取消勾选可保留负值，用于与历史报表逐格比对。
+                        </div>
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="exclude_rejected_leave"
+                           id="excludeRejected" {% if rule.exclude_rejected_leave %}checked{% endif %}>
+                    <label class="form-check-label" for="excludeRejected">
+                        排除未通过的请假（审批结果 ≠ 同意）
+                        <div class="form-text mb-0">
+                            审批结果不是「同意」的请假记录，不进入每日明细，也不计入月度合计。
+                            若不排除，某人某类请假的天数会虚高。
+                        </div>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-4">
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check2"></i> 保存规则
+            </button>
+            <span class="text-muted small ms-2">规则变更会写入审计日志，含变更前后对比。</span>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('ruleForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    const fd = new FormData(this);
+    fetch(SCRIPT_PREFIX + '{% url "attendance:rule_save" %}', {
+        method: 'POST',
+        headers: {'X-CSRFToken': csrftoken},
+        body: fd
+    }).then(r => r.json())
+      .then(data => {
+          alert(data.message);
+          if (data.success) window.location.reload();
+      })
+      .catch(err => alert('保存失败：' + err));
+});
+</script>
+{% endblock %}

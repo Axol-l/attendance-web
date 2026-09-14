@@ -1,0 +1,72 @@
+services:
+  # MySQL 数据库服务
+  db:
+    image: mysql:8.0
+    container_name: attendance_db
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-time-zone='+08:00'
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - attendance-network
+
+  # Django Web 应用服务
+  web:
+    build: .
+    image: attendance-web:latest
+    container_name: attendance_web
+    restart: unless-stopped
+    command: sh docker-entrypoint.sh
+    env_file:
+      - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings_production
+      - DB_HOST=db
+      - DB_PORT=3306
+      - BACKUP_DIR=/app/backup_files
+      - TZ=Asia/Shanghai
+    volumes:
+      # 生产环境**刻意不挂载代码与模板**：随镜像走，保证可回滚。
+      # 只挂载运行时数据。
+      - ./logs:/app/logs
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+      - ./backup_files:/app/backup_files
+    ports:
+      # 仅监听本机，由共享 Nginx 以 /attendance/ 前缀反代
+      - "127.0.0.1:8001:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - attendance-network
+
+volumes:
+  mysql_data:
+    driver: local
+  static_volume:
+    driver: local
+  media_volume:
+    driver: local
+
+networks:
+  attendance-network:
+    driver: bridge

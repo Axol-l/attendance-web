@@ -1,0 +1,84 @@
+services:
+  # MySQL 数据库服务
+  db:
+    image: mysql:8.0
+    container_name: attendance_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: attendance_db
+      MYSQL_USER: att_admin
+      MYSQL_PASSWORD: att123456
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql_data:/var/lib/mysql
+    # 端口与生产数据系统（3308）刻意错开，便于同机共存
+    ports:
+      - "3309:3306"
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-time-zone='+08:00'
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:-rootpassword}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - attendance-network
+
+  # Django Web 应用服务
+  web:
+    build: .
+    container_name: attendance_web
+    restart: unless-stopped
+    command: sh docker-entrypoint.sh
+    volumes:
+      # 挂载 logs 与 templates：改动即时生效，无需 docker compose build
+      # 前提：config/settings.py 里按 DEBUG 显式配置了模板 loaders，
+      #      本地不套 cached.Loader，模板才会每次请求重新读取。
+      #      （Django 4.1 起未显式配 loaders 时会无条件缓存，与 DEBUG 无关）
+      # 注意：生产用的 docker-compose.server.yml 刻意不挂代码，随镜像走以保证可回滚
+      - ./logs:/app/logs
+      - ./templates:/app/templates
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+      - backup_volume:/app/backup_files
+    ports:
+      # 与生产数据系统（8000）错开
+      - "8001:8000"
+    environment:
+      - DEBUG=True
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_NAME=attendance_db
+      - DB_USER=att_admin
+      - DB_PASSWORD=att123456
+      - SECRET_KEY=django-insecure-local-dev-key
+      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
+      - BACKUP_DIR=/app/backup_files
+      # 本机 CPU 较多，默认公式 (2×核数+1) 会起 20+ 个 worker 纯属浪费内存。
+      # 单机小系统的实际并发很低，4 个 worker × 2 线程足够。
+      - GUNICORN_WORKERS=4
+      - TZ=Asia/Shanghai
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - attendance-network
+
+volumes:
+  mysql_data:
+    driver: local
+  static_volume:
+    driver: local
+  media_volume:
+    driver: local
+  backup_volume:
+    driver: local
+
+networks:
+  attendance-network:
+    driver: bridge
