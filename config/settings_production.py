@@ -59,7 +59,10 @@ STATICFILES_FINDERS = [
 ]
 
 if not DEBUG:
-    STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.ManifestStaticFilesStorage'
+    # WhiteNoise 的压缩 + 指纹存储：静态文件带内容哈希、自动 gzip/brotli。
+    # 配合 settings.py 里的 WhiteNoiseMiddleware，容器自身即可服务静态文件，
+    # 不依赖 Nginx 额外配 static location。
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 
 # ==================== 日志 ====================

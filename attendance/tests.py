@@ -2541,4 +2541,152 @@ class DockerignoreCoverageTests(TestCase):
         self.assertEqual(leaked, [], f'这些敏感文件会被打进镜像：{leaked}')
 
 
+# ============================================================================
+# 离线前端资源（内网部署）
+# ============================================================================
+
+class OfflineAssetsTests(TestCase):
+    """
+    ⚠️ 本系统要能部署在**无外网的内网环境**，所以页面不能引用任何公网 CDN。
+
+    三条容易各自失效的链路，分别守住：
+      1. 模板里又出现外链（改样式时顺手贴回 CDN 链接）；
+      2. 资源文件没随仓库分发（漏提交，或下载失败留下 0 字节文件）；
+      3. 只下了图标 CSS、**忘了下字体文件** —— 页面不报错，
+         图标静默变成空白方块，最难发现。
+    """
+
+    ASSETS = [
+        'vendor/bootstrap/bootstrap.min.css',
+        'vendor/bootstrap/bootstrap.bundle.min.js',
+        'vendor/bootstrap-icons/bootstrap-icons.css',
+        'vendor/bootstrap-icons/fonts/bootstrap-icons.woff2',
+        'vendor/bootstrap-icons/fonts/bootstrap-icons.woff',
+    ]
+
+    def _templates(self):
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parent.parent / 'templates'
+        return sorted(root.rglob('*.html'))
+
+    def test_no_external_urls_in_templates(self):
+        """模板里不得出现 http(s) 外链 —— 内网访问不到，会直接掉样式与图标。"""
+        import re
+
+        url_re = re.compile(r'https?://[^\s"\'<>]+')
+        offenders = []
+        for path in self._templates():
+            text = path.read_text(encoding='utf-8')
+            for m in url_re.finditer(text):
+                offenders.append(f'{path.name}: {m.group(0)}')
+        self.assertEqual(
+            offenders, [],
+            '模板里出现了外部链接，内网部署会加载失败：\n  ' + '\n  '.join(offenders))
+
+    def test_vendored_assets_are_shipped(self):
+        """资源文件必须在仓库里，且不能是空的/半截的。"""
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parent.parent / 'static'
+        missing, too_small = [], []
+        for rel in self.ASSETS:
+            path = root / rel
+            if not path.is_file():
+                missing.append(rel)
+            elif path.stat().st_size < 1024:
+                too_small.append(f'{rel} ({path.stat().st_size} 字节)')
+        self.assertEqual(missing, [], f'缺少前端资源文件：{missing}')
+        self.assertEqual(too_small, [], f'资源文件过小，疑似下载失败：{too_small}')
+
+    def test_icon_css_referenced_fonts_exist(self):
+        """
+        ⚠️ bootstrap-icons.css 用相对路径 `./fonts/xxx.woff2` 引字体。
+           只拷贝 CSS 而不带 fonts/ 目录时，页面**不报错**，
+           所有图标静默变成空白方块。这里按 CSS 里的实际引用路径逐个核对。
+        """
+        import pathlib
+        import re
+
+        root = pathlib.Path(__file__).resolve().parent.parent / 'static'
+        css = root / 'vendor' / 'bootstrap-icons' / 'bootstrap-icons.css'
+        self.assertTrue(css.is_file(), '缺少 bootstrap-icons.css')
+
+        refs = re.findall(r'url\(["\']?(\./fonts/[^"\')?]+)', css.read_text(encoding='utf-8'))
+        self.assertTrue(refs, 'CSS 里没有解析到字体引用，正则可能失效了')
+
+        missing = [r for r in sorted(set(refs)) if not (css.parent / r).is_file()]
+        self.assertEqual(missing, [], f'CSS 引用了但文件不存在：{missing}')
+
+    def test_templates_use_static_tag_for_assets(self):
+        """两个入口模板都必须通过 {% static %} 引用本地资源。"""
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parent.parent / 'templates'
+        for rel, needles in (
+            ('base.html', ['vendor/bootstrap/bootstrap.min.css',
+                           'vendor/bootstrap-icons/bootstrap-icons.css',
+                           'vendor/bootstrap/bootstrap.bundle.min.js']),
+            ('accounts/login.html', ['vendor/bootstrap/bootstrap.min.css',
+                                     'vendor/bootstrap-icons/bootstrap-icons.css',
+                                     'vendor/bootstrap/bootstrap.bundle.min.js']),
+        ):
+            text = (root / rel).read_text(encoding='utf-8')
+            self.assertIn('{% load static %}', text, f'{rel} 缺少 {{% load static %}}')
+            for needle in needles:
+                self.assertIn("{% static '" + needle + "' %}", text,
+                              f'{rel} 未通过 static 标签引用 {needle}')
+
+    def test_staticfiles_dirs_includes_static(self):
+        """STATICFILES_DIRS 必须包含项目 static/ 目录，否则 collectstatic 收不到。"""
+        import pathlib
+
+        from django.conf import settings as dj_settings
+
+        static_dir = pathlib.Path(dj_settings.BASE_DIR) / 'static'
+        configured = [pathlib.Path(p) for p in dj_settings.STATICFILES_DIRS]
+        self.assertIn(static_dir, configured,
+                      'STATICFILES_DIRS 未包含项目 static/ 目录')
+        self.assertTrue(static_dir.is_dir(), 'static/ 目录不存在')
+
+    def test_vendored_assets_have_no_dangling_sourcemap(self):
+        """
+        ⚠️ 这条守的是"**只有生产模式才会炸**"的一个部署阻断：
+
+           Bootstrap 的 .min 文件末尾带
+               /*# sourceMappingURL=bootstrap.min.css.map */
+           而 .map 是开发期产物、没随仓库分发。
+
+           生产用的是 CompressedManifestStaticFilesStorage，它会在 collectstatic
+           时解析 CSS 里的引用，找不到文件就抛 MissingFileError，
+           **整个 collectstatic 失败**（实测报错原文：
+             Post-processing 'vendor/bootstrap/bootstrap.min.css' failed!
+             MissingFileError: 'vendor/bootstrap/bootstrap.min.css.map' could not be found）
+
+           而开发模式（DEBUG=True、普通存储、不做后处理）完全看不出来 ——
+           典型的"上线才发现"。文件里的 sourceMappingURL 注释已被去掉，
+           这个用例防止有人重新下载原版文件把它带回来。
+        """
+        import pathlib
+        import re
+
+        root = pathlib.Path(__file__).resolve().parent.parent / 'static'
+        offenders = []
+        for rel in ('vendor/bootstrap/bootstrap.min.css',
+                    'vendor/bootstrap/bootstrap.bundle.min.js',
+                    'vendor/bootstrap-icons/bootstrap-icons.css'):
+            path = root / rel
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding='utf-8', errors='ignore')
+            for m in re.finditer(r'sourceMappingURL=(\S+?)(?:\s*\*/|\s*$)', text, re.M):
+                target = m.group(1).strip()
+                if not (path.parent / target).is_file():
+                    offenders.append(f'{rel} -> {target}')
+        self.assertEqual(
+            offenders, [],
+            '这些 sourceMappingURL 指向未分发的文件，会导致生产 collectstatic 失败：'
+            f'{offenders}\n  修复：跑 tools/_strip_sourcemap.py，或补上对应的 .map 文件')
+
+
 

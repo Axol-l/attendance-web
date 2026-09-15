@@ -13,3 +13,4 @@ pytz==2025.2
 tzdata==2025.2
 six==1.17.0
 gunicorn==21.2.0
+whitenoise==6.12.0

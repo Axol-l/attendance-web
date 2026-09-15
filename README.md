@@ -4,13 +4,17 @@
 
 | | |
 |---|---|
-| **技术栈** | Django 4.1 + Python 3.10 + MySQL 8.0 + Bootstrap 5（CDN，无前端框架） |
+| **技术栈** | Django 4.1 + Python 3.10 + MySQL 8.0 + Bootstrap 5（随仓库分发，无前端框架） |
 | **Excel 处理** | openpyxl + pandas |
 | **部署** | Docker Compose + Gunicorn + Nginx（支持子路径前缀部署） |
 | **测试** | 205 个单元测试，用内存 SQLite 跑，不依赖 MySQL |
 
 > ⚠️ **本仓库刻意不包含**任何真实业务数据、报表模板与内部文档。
 > 见文末[隐私说明](#隐私说明)。
+
+> ✅ **无外网依赖，可内网部署**：Bootstrap 与 Bootstrap Icons 随仓库分发
+> （`static/vendor/`），页面里**没有任何公网 CDN 外链**；静态文件由应用内的
+> WhiteNoise 直接提供，Nginx 侧不需要额外配 static location。
 
 ---
 
@@ -26,6 +30,18 @@
 | **考勤报表导出** | 以模板填充方式生成 xlsx，复刻桌面工具的合并单元格、状态着色、周末红字 |
 | **考勤规则配置** | 排除规则、加班阈值、应出勤天数、颜色映射都可配置，不再硬编码 |
 | **权限与审计** | 3 档角色 + 5 个细粒度权限码；关键操作写审计日志 |
+
+### 技术文档
+
+实现细节见 [`docs/modules/`](docs/modules/)：
+
+| 文档 | 内容 |
+|---|---|
+| [`attendance.md`](docs/modules/attendance.md) | 核心业务模块：数据模型、字段映射、表头解析器、导入器、汇总计算、报表生成 |
+| [`accounts.md`](docs/modules/accounts.md) | 用户 · 角色 · 权限码 · 装饰器链 · 审计日志 |
+| [`config.md`](docs/modules/config.md) | 项目配置：settings 关键项、业务常量、日志、静态与媒体文件 |
+| [`templates.md`](docs/modules/templates.md) | 模板体系、权限显示、页面交互与前端禁忌 |
+| [`deployment.md`](docs/modules/deployment.md) | 部署与运维：容器、环境变量、启动流程、备份、升级回滚 |
 
 ---
 
@@ -268,7 +284,9 @@ location /attendance/ {
 ├── backups/                    数据库备份
 ├── core/                       健康检查与首页
 ├── templates/                  base.html 及页面模板
-├── docs/                       内部文档（**不在仓库内**）
+├── static/                     前端资源（Bootstrap + 图标，随仓库分发，不走 CDN）
+├── docs/modules/               技术模块文档
+├── docs/                       其它内部文档（**不在仓库内**）
 ├── tools/                      对账与校验脚本（**不在仓库内**）
 ├── Dockerfile · docker-compose.yml · docker-compose.server.yml
 ├── docker-entrypoint.sh · gunicorn.conf.py · deploy.sh

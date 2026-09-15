@@ -65,6 +65,10 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # WhiteNoise 必须紧跟 SecurityMiddleware。
+    # 作用：生产（DEBUG=False）下由应用自己服务静态文件，
+    # 无需 Nginx 额外配 static location —— 内网单容器部署时少一个出错点。
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -152,6 +156,11 @@ USE_TZ = True
 
 STATIC_URL = os.getenv('STATIC_URL', '/static/')
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# 项目自带的前端资源（Bootstrap 与 Bootstrap Icons）。
+# ⚠️ 刻意**不用 CDN**：本系统可能部署在无外网的内网环境，
+#    页面依赖公网 CDN 会直接掉样式与图标。
+STATICFILES_DIRS = [BASE_DIR / 'static']
 
 MEDIA_URL = os.getenv('MEDIA_URL', '/media/')
 MEDIA_ROOT = BASE_DIR / 'media'
