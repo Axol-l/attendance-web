@@ -4,17 +4,9 @@
 
 | | |
 |---|---|
-| **技术栈** | Django 4.1 + Python 3.10 + MySQL 8.0 + Bootstrap 5（随仓库分发，无前端框架） |
+| **技术栈** | Django 4.1 + Python 3.10 + MySQL 8.0 + Bootstrap 5 |
 | **Excel 处理** | openpyxl + pandas |
-| **部署** | Docker Compose + Gunicorn + Nginx（支持子路径前缀部署） |
-| **测试** | 205 个单元测试，用内存 SQLite 跑，不依赖 MySQL |
-
-> ⚠️ **本仓库刻意不包含**任何真实业务数据、报表模板与内部文档。
-> 见文末[隐私说明](#隐私说明)。
-
-> ✅ **无外网依赖，可内网部署**：Bootstrap 与 Bootstrap Icons 随仓库分发
-> （`static/vendor/`），页面里**没有任何公网 CDN 外链**；静态文件由应用内的
-> WhiteNoise 直接提供，Nginx 侧不需要额外配 static location。
+| **部署** | Docker Compose + Gunicorn + Nginx |
 
 ---
 
@@ -25,7 +17,7 @@
 | **钉钉数据导入** | 解析「每日统计」日考勤表与「请假单据」，自动处理**多行表头 + 合并单元格** |
 | **导入可追溯** | 每次导入留记录与结构化导入报告；同一账期支持「合并」与「整账期覆盖」两种策略 |
 | **每日明细查询** | 按人员 / 日期范围 / 部门筛选，分页浏览 |
-| **请假记录查询** | 按姓名、类型、审批状态、**审批编号**（支持片段匹配）筛选 |
+| **请假记录查询** | 按姓名、类型、审批状态、**审批编号**筛选 |
 | **月度汇总** | 应出勤、出勤打卡、实际出勤、各类请假、缺勤、加班；支持**跨月对比** |
 | **考勤报表导出** | 以模板填充方式生成 xlsx，复刻桌面工具的合并单元格、状态着色、周末红字 |
 | **考勤规则配置** | 排除规则、加班阈值、应出勤天数、颜色映射都可配置，不再硬编码 |
@@ -78,7 +70,7 @@ docker compose up -d --build
 # 健康检查 http://localhost:8001/health/
 ```
 
-首启自动建表并创建超级用户（默认 `admin` / `admin123456`，**登录后立即修改**）。
+首启自动建表并创建超级用户（默认 `admin` / `admin123456`）。
 
 ---
 
@@ -104,7 +96,7 @@ docker compose up -d --build
 | **合并**（默认） | 同 `(日期, UserId)` 覆盖更新，文件里没有的人保留 | 补传、增量修正 |
 | **整账期覆盖** | 先清空该账期全部记录再写入 | 重新导出了完整月表，人员有增减 |
 
-> ⚠️ 整账期覆盖**不可逆**。它的意义在于：重导后消失的人不会留下幽灵数据。
+> ⚠️ 整账期覆盖**不可逆**。
 
 ### 3.3 查询与汇总
 
@@ -132,12 +124,11 @@ python manage.py prune_imports --apply    # 执行
 
 ---
 
-## 4. 报表模板（必读）
+## 4. 报表模板
 
 生成报表采用「**以模板为基础填充**」的方式 —— 模板里预置了合并区域、列宽、行高、
 边框与数字格式，从空白 workbook 重画既费事又容易漏。
 
-**模板不随本仓库分发**（它来自具体企业的内部流程，且文件属性里带有创建者信息）。
 部署前请自备模板并放到：
 
 ```
@@ -156,7 +147,6 @@ attendance/templates_xlsx/考勤表模板.xlsx
 > 生成报表时程序会顺带做一次**尾部空列裁剪**：模板里若有
 > `<col min="N" max="16384">` 这类定义，Excel 会一直显示到 XFD 列，
 > 生成的报表会在 XML 层把多余的列定义删掉。
-> 直接打开模板文件本身仍会看到 XFD 列，这是模板自身的属性，不影响生成结果。
 
 ---
 
@@ -187,15 +177,6 @@ attendance/templates_xlsx/考勤表模板.xlsx
   （删除会连带清掉该文件导入的数据，不可逆）
 - 导航与后端权限由 `attendance/permissions.py` 与 `context_processors` 保证一致，
   并由 `PermissionMatrixTests` 逐条覆盖
-
-> ⚠️ 新增权限码时要同时改四处，否则会出现"前端按钮消失但后端仍放行"：
-> 1. `accounts/context_processors.py` 的 `PERMISSION_TEMPLATE_KEYS`
-> 2. `accounts/views.py` 的 `PERMISSION_CODES`
-> 3. `attendance/permissions.py` 的 `PAGE_PERMISSIONS`
-> 4. 对应视图的 `@permission_required` 装饰器
->
-> 新增 `log_action(...)` 调用时，还要把 action 码登记进 `ACTION_LABELS`，
-> 否则操作日志页会显示英文码（有测试扫源码强制守住）。
 
 ---
 
@@ -252,7 +233,6 @@ location /attendance/ {
 ### 7.3 备份
 
 `/backups/` 页面可创建 / 下载 / 删除数据库备份（mysqldump + zip）。
-**没有定时自动备份**，需要时请用系统 cron 调 `mysqldump`。
 
 ---
 
@@ -270,7 +250,7 @@ location /attendance/ {
 │   ├── services.py             log_action() —— 统一审计入口
 │   └── context_processors.py   向模板注入 user_perms
 ├── attendance/                 考勤业务（核心）
-│   ├── mapping.py              钉钉字段映射（纯数据，无逻辑）
+│   ├── mapping.py              钉钉字段映射
 │   ├── models.py               AttendanceDaily / LeaveRecord / AttendanceRule / UploadedFile
 │   ├── services.py             表头解析器 · 导入器 · 汇总计算
 │   ├── report.py               报表生成与列裁剪
@@ -284,10 +264,8 @@ location /attendance/ {
 ├── backups/                    数据库备份
 ├── core/                       健康检查与首页
 ├── templates/                  base.html 及页面模板
-├── static/                     前端资源（Bootstrap + 图标，随仓库分发，不走 CDN）
+├── static/                     前端资源
 ├── docs/modules/               技术模块文档
-├── docs/                       其它内部文档（**不在仓库内**）
-├── tools/                      对账与校验脚本（**不在仓库内**）
 ├── Dockerfile · docker-compose.yml · docker-compose.server.yml
 ├── docker-entrypoint.sh · gunicorn.conf.py · deploy.sh
 └── requirements.txt
@@ -295,72 +273,7 @@ location /attendance/ {
 
 ---
 
-## 9. 工程约定
-
-1. **视图**：函数视图 + `@login_required` → `@permission_required(...)`，不使用 CBV
-2. **业务逻辑**：放 `services.py`，不写在视图里
-3. **字段映射**：单独模块（`attendance/mapping.py`），纯数据无逻辑，便于调整而不用改代码
-4. **审计日志**：统一走 `accounts/services.py` 的 `log_action()`
-5. **权限 UI**：`user_perms` 上下文，模板用 `{% if user_perms.xxx %}`
-6. **迁移**：`makemigrations` 后**必须人工审阅**，确认是 `CreateModel`/`AddField` 而非 `RemoveField`
-
-### 数据模型要点
-
-- **唯一键**：日考勤按 `(work_date, user_id)` 覆盖导入。
-  「工号」列在真实导出里可能全为空不可用；「姓名」有重名与离职后缀变化风险；
-  `UserId` 是钉钉的稳定 ID，作为主键依据。
-- **请假统一存小时**：源表里部分类型是「小时」、部分是「天」，
-  导入时按标准工作时长折算成小时，原始单位留痕。
-- **没有 `unique_together(work_date, user_id)`**：这两个字段都可能为空，
-  而 NULL 在唯一约束里不等于自身，会放进重复行。查重逻辑在 `ExcelImporter` 里显式处理。
-
----
-
-## 10. 已避开的坑
-
-这些都是开发过程中实测踩到并修掉的，改动相关代码前建议先看一眼。
-
-| 坑 | 做法 |
-|---|---|
-| **多行表头 + 合并单元格**：只读第一行表头会丢掉全部 10 个请假子列 | 表头行自动定位 + 合并区域展开；表头按**行号**取值（倒数第二行为分组、最后一行为叶子） |
-| 表头行检测被标题行的大合并区域误导 | 用**纵向合并覆盖率**配合最小实际列数判定；阈值必须拿真实文件验证，不能凭感觉调 |
-| 钉钉导出的 xlsx 缺 `dimension` 元数据，`read_only=True` 下 `max_row` 恒为 1 | 强制普通模式加载，解析器全程不使用 `read_only` |
-| 日期用字符串下标判断月份 | 统一解析成 `date` 对象再比较（字符串下标法在两位数月份上会串月） |
-| 负加班不截断会冲减月度合计 | 规则化，默认截断为 0 |
-| 「应出勤天数」被写进出勤打卡列 | 写入正确的列，且改为规则配置项 |
-| 未通过的请假被计入合计 | 按审批状态与结果过滤，默认排除 |
-| 按姓名硬编码排除人员 | 改为按结构化规则（考勤组 + 无部门）排除，姓名名单仅作补充且默认为空 |
-| 同一人在两份表里姓名写法不一致，被当成两个人 | 导入时统一归一化离职后缀 |
-| 用 `setattr` 写映射字段，字段名拼错**不报错**只丢数据 | 加双向覆盖测试：映射指向的字段必须真实存在，模型字段必须有映射来源 |
-| 一次构造上千个键的 `Q` 对象 → `Expression tree is too large` | 批量删除分块（每批 200 个键） |
-| `merge_cells` 会重置样式，先上色后合并会丢颜色 | 先合并再上色 |
-| 6 位色值不补 ARGB 前缀会被当成 alpha=0（全透明） | 颜色统一归一化为 8 位 ARGB |
-| 查询结果全量内联进 HTML | `QUERY_MAX_RESULTS` 硬上限，超限只提示不渲染 |
-| `innerHTML` 拼接 Excel 数据 → 存储型 XSS | 模板全部走 Django 自动转义，并提供 `escapeHtml()` |
-| Django 4.1 起 `TEMPLATES` 未配 `loaders` 会**无条件**缓存模板（与 `DEBUG` 无关） | 显式声明 loaders |
-| `.dockerignore` 里 `*.sql` 不跨 `/`（Go `filepath.Match` 语义） | 用 `**/*.sql` |
-| `.dockerignore` 的 `__pycache__/` 只排除顶层目录 | 用 `**/__pycache__/`（否则嵌套的字节码会进镜像） |
-| 排除测试文件的模式写窄了（`**/test_*.py` 匹配不到 `tests_report.py`） | 用 `**/test*.py`；并用测试断言每个测试文件都被排除 |
-| `subprocess.run` 的 `timeout` 仅在 `stdout=PIPE` 时生效 | 捕获输出后自行落盘 |
-
----
-
-## 11. 隐私说明
-
-本仓库为公开发布版本，**刻意排除了**以下内容：
-
-| 排除项 | 原因 |
-|---|---|
-| 考勤原始数据与生成的报表（`*.xlsx` / `*.xls` / `media/`） | 含员工姓名、工号等个人信息 |
-| 报表模板 `attendance/templates_xlsx/` | 模板文件属性中含创建者信息，且属企业内部表格格式 |
-| `tools/` 对账脚本 | 按真实样本与真实姓名逐行对账 |
-| `docs/` 内部文档 | 业务口径确认单、权限矩阵、迁移手册等 |
-| `.env` 系列 | 含口令与服务器地址 |
-| 备份文件（`*.sql` / `*.zip`） | 含完整数据库内容 |
-
-代码与测试中的人员姓名一律使用 `员工NN` 这类占位符，账期使用示意值。
-另有一个单元测试专门扫描生产代码，**只保存姓名的 SHA-256 摘要**（不存明文）
-来防止真实姓名被回填进代码 —— 如果把姓名明文写在测试里，测试文件自身就会成为泄露源。
+## 9. 隐私说明
 
 ### 部署前请确认
 
@@ -371,6 +284,6 @@ location /attendance/ {
 
 ---
 
-## 12. 许可
+## 10. 许可
 
 内部项目，未附带开源许可。使用前请与作者确认。
