@@ -294,10 +294,9 @@ MEDIA_ROOT / uploads / <file_kind> / <period 或 unknown> / <YYYYmmdd_HHMMSS>_<s
 
 **Nginx 路径前缀 `/attendance/`**：与同机另一套系统共享同一个 Nginx 实例，本项目不占根路径。对应配置为 `FORCE_SCRIPT_NAME=/attendance`、`STATIC_URL=/attendance/static/`、`MEDIA_URL=/attendance/media/`、`CSRF_TRUSTED_ORIGINS` 填外部访问地址；Nginx 侧 `location /attendance/ { proxy_pass http://127.0.0.1:8001/; ... proxy_set_header SCRIPT_NAME /attendance; client_max_body_size 60m; }`（上传文件上限 50MB，留出余量）。
 
-## 已避开的坑
+<!-- ## 已避开的坑
 
-| 坑 | 本项目做法 |
-|----|-----------|
+| 坑 | 本项目做法 ||----|-----------|
 | Django 4.1 起 `TEMPLATES` 未显式配 `loaders` 会**无条件**缓存模板（与 `DEBUG` 无关），改模板必须重启进程 | `settings.py` 显式声明 `loaders`：`DEBUG=True` 用不带缓存的链；同时因显式 loaders 要求 `APP_DIRS=False`，把 `app_directories.Loader` 写进链里。`docker-compose.yml` 之所以敢挂载 `templates/`，前提就是这个配置 |
 | Docker 用 Go `filepath.Match` 语义，`*.sql` 的 `*` 不跨 `/`，只匹配根目录 | `.dockerignore` 用 `**/*.sql`，并同时排除 `**/*.sql.zip`、`**/*.zip` |
 | 排除整个 `backups/` 目录会连带排掉 Django app（`models.py`、`migrations/`），而它同时又是运行时备份目录 | `.dockerignore` 只排除文件类型（`**/*.sql` 等），不排除 `backups/` 目录本身 |
@@ -319,4 +318,4 @@ MEDIA_ROOT / uploads / <file_kind> / <period 或 unknown> / <YYYYmmdd_HHMMSS>_<s
 | `MAX_FILE_SIZE` 环境变量调大后上传上限不生效 —— 它喂给了一个**无人引用**的 `MAX_UPLOAD_SIZE`，真正校验的 `IMPORT_MAX_FILE_SIZE` 写死 50MB，且不会有任何报错 | 两者合并：`IMPORT_MAX_FILE_SIZE` 直接读 `MAX_FILE_SIZE`；死配置已删除，`UploadSizeLimitTests` 阻止它回来 |
 | `IMPORT_MAX_ROWS` 只是 settings 里的一句声明、无任何代码引用，等于"文档写了上限但实际无上限" | `ExcelImporter.import_daily` / `import_leave` 在读表前按各 Sheet `max_row` 之和判定，超限直接拒绝 |
 | 行数上限若在"清空账期"**之后**判定，一个超限文件会先把当月数据删光再报错 | 上限判定**先于 purge**；`ImportLimitTests.test_row_cap_is_checked_before_purge` 用「先导入 6 行 → 再传超限文件」的方式守住这个顺序（把检查挪到 purge 之后该用例立刻变红） |
-| 用 `innerHTML` 拼接 Excel 数据造成存储型 XSS | `templates/base.html` 提供 `escapeHtml()`，模板全部走 Django 自动转义 |
+| 用 `innerHTML` 拼接 Excel 数据造成存储型 XSS | `templates/base.html` 提供 `escapeHtml()`，模板全部走 Django 自动转义 | -->

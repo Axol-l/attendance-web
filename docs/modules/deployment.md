@@ -94,6 +94,26 @@
 | `tools/`、`**/tests.py`、`**/test_*.py`、`**/conftest.py` | 测试与开发期脚本运行时不依赖 |
 | `*.egg-info/`、`dist/`、`build/` | 其他构建产物 |
 
+<!-- 两个必须记住的坑：
+
+1. **`*.sql` 的 glob 语法原因**：Docker 使用 Go `filepath.Match` 语义，
+   `*` **不跨 `/`**，所以 `*.sql` 只匹配构建上下文根目录下的文件，
+   匹配不到 `backups/` 里的备份。必须写成 `**/*.sql` 才能覆盖子目录。
+   文件内同时保留 `*.sql` 与 `**/*.sql` 两行。
+2. **`**/*.xlsx` 排除原始考勤数据，但报表模板必须放回来**：
+   排除 `**/*.xlsx` 是为了不让含个人信息的考勤原始数据进镜像；而
+   `attendance/templates_xlsx/考勤表模板.xlsx` 是**代码资产**，报表生成依赖它。
+   因此文件末尾用否定规则 `!attendance/templates_xlsx/*.xlsx` 把它重新包含。
+   否定规则能生效的前提是**父目录未被整体排除** —— 上面的规则只排除文件类型，
+   没有写 `attendance/`，也没有排除整个 `backups/` 目录（该目录同时是 Django app：
+   `backups/models.py`、`backups/migrations/`，既排除会导致启动失败）。
+   这是踩过的坑：模板缺失会让「生成报表」直接失败。
+   相关代码位置：`attendance/report.py` 的
+   `TEMPLATE_DIR = <app>/templates_xlsx`、`TEMPLATE_FILE = '考勤表模板.xlsx'`。
+   `backups/backup.py` 的注释也记录了同类问题：`backup_dir` 必须用环境变量
+   `BACKUP_DIR` 与挂载点对齐，否则「页面读的目录与挂载目录对不上，
+   历史备份永远列不出来」。 -->
+
 ---
 
 ## 启动流程
@@ -170,7 +190,7 @@ docker compose -f docker-compose.server.yml logs --tail=100 web
 
 ---
 
-## Nginx 配置（共享实例）
+<!-- ## Nginx 配置（共享实例）
 
 `/attendance/` 的 location 片段（与 `README.md` 第 7 节一致）：
 
@@ -217,8 +237,7 @@ location /attendance/ {
 - **Nginx 配置文件本身不在本仓库内**，由服务器上的共享实例维护（与同机其它项目
   的 location 共存于同一份配置）。
 
----
-
+--- -->
 
 ## 部署步骤（生产）
 
@@ -366,7 +385,7 @@ python manage.py makemigrations --dry-run --verbosity 3 --settings=config.settin
 
 - 迁移前先做一次数据库备份（`/backups/` 页面或上文命令）。
 
-### 回滚
+<!-- ### 回滚
 
 仓库中没有版本化的镜像标签或回滚脚本，`docker-compose.server.yml` 固定使用
 `image: attendance-web:latest`，因此回滚只能靠**旧镜像**：
@@ -384,7 +403,9 @@ docker tag attendance-web:backup-YYYYmmdd attendance-web:latest
 > 若服务器上已有其他镜像管理方式，以其为准。
 
 回滚还要注意：数据库迁移**不会自动回退**。若升级引入了破坏性迁移
-（`RemoveField` / 改列），回滚镜像后需同时恢复升级前的数据库备份。
+（`RemoveField` / 改列），回滚镜像后需同时恢复升级前的数据库备份。 -->
+
+<!-- 
 
 ---
 
@@ -411,4 +432,4 @@ docker tag attendance-web:backup-YYYYmmdd attendance-web:latest
 | 前端资源走公网 CDN，内网环境直接掉样式与图标 | Bootstrap 与图标随仓库分发到 `static/vendor/`，模板用 `{% static %}` 引用；`OfflineAssetsTests` 断言模板里不出现任何 http(s) 外链 |
 | `bootstrap.min.css` 末尾的 `sourceMappingURL` 指向未分发的 `.map`，生产 `CompressedManifestStaticFilesStorage` 后处理时抛 `MissingFileError`，**整个 collectstatic 失败**（开发模式看不出来） | 用 `tools/_strip_sourcemap.py` 去掉该注释；`OfflineAssetsTests.test_vendored_assets_have_no_dangling_sourcemap` 守住 |
 | 只下图标 CSS、忘下 `fonts/` 目录，页面不报错但图标静默变空白方块 | 资源随仓库分发，测试按 CSS 里实际的 `url()` 逐个核对字体文件存在 |
-| 在同一卷里先用 `DEBUG=True` 收过静态文件、再切 `DEBUG=False`，`{% static %}` 会抛 `Missing staticfiles manifest entry` | 两种模式各自把静态文件收全：生产启动时 entrypoint 会用生产配置重跑 `collectstatic`；本地切模式后手工跑一次 `collectstatic` 即可 |
+| 在同一卷里先用 `DEBUG=True` 收过静态文件、再切 `DEBUG=False`，`{% static %}` 会抛 `Missing staticfiles manifest entry` | 两种模式各自把静态文件收全：生产启动时 entrypoint 会用生产配置重跑 `collectstatic`；本地切模式后手工跑一次 `collectstatic` 即可 | -->
